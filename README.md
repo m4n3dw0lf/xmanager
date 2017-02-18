@@ -20,7 +20,7 @@ xmanager.sh
  - Software information (X Information about Kernel and Distribution)
  - Hardware information (X Information about hardware)
  - Firewall management (X Rules creation and profiles loading)
- - Service management (X Stop, start, restart machine running services)
+ - Service management (X Stop, start, restart services)
  - Package management (X Reconfigure, reinstall, uninstall packages)
  - SCP Download and Upload (Download/Upload file in a remote server)
  - Run script (X script selection to be executed)
