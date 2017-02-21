@@ -262,7 +262,7 @@ SERVICE=$(zenity --list \
 	--height=400)
 OPTION=$(zenity --list \
 	  --title "xmanager" \
-	  --column="Pick" --column="Option"\
+	  --column="Option"\
 	  --width=600 --height=400 \
 	  "Status" "Start" "Stop" "Restart" "Reload")
 if [ "$OPTION" == "Status" ]
