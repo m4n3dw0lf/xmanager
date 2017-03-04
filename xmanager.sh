@@ -70,6 +70,9 @@ firewallmin(){
 
 firewall(){
 	OPTION=$(zenity --list --title="xmanager" --column="Services" "Show Rules" "Profile Editor" "Apply new policy...")
+        if [[ $? -eq 1 ]]; then
+                return 1;
+        fi
 	if [ "$OPTION" == "Show Rules" ]
   		then
     			LIST=$(iptables -L)
@@ -98,6 +101,9 @@ firewall(){
 	elif [ "$OPTION" == "Apply new policy..." ]
 		then
 	        	TABLE=$(zenity --list --title="xmanager" --column="Table" "Default" "NAT")
+		        if [[ $? -eq 1 ]]; then
+        		        return 1;
+        		fi
        	 		ISNAT=""
 			OPERATION=""
 			CHAIN=""
@@ -112,6 +118,9 @@ firewall(){
 			NAT_HOST_REDIRECT=""
 			NAT_PORT_REDIRECT=""
     			OPERATION=$(zenity --list --title="xmanager" --column="Operation" "Policy" "Add" "Delete")
+			if [[ $? -eq 1 ]]; then
+                		return 1;
+        		fi
 			#PREENCHENDO PARAMETROS NAT
     			if [ "$TABLE" == "NAT" ]
 				then
@@ -121,18 +130,30 @@ firewall(){
 						then
 							zenity --info --text="IP Forwarding is disabled!"
 					    		ENNAT=$(zenity --list --title="xmanager" --column="Forwarding Option" "Enable" "Disable")
+							if [[ $? -eq 1 ]]; then
+						                return 1;
+        						fi
 					fi
 				    	if [ "$ENNAT" == "Enable" ]
 				        	then
 	        					echo 1 > "/proc/sys/net/ipv4/ip_forward"
 	    				fi
     					CHAIN=$(zenity --list --title="xmanager" --column="Chain" "PREROUTING" "POSTROUTING")
+				        if [[ $? -eq 1 ]]; then
+                				return 1;
+        				fi
 					REDIRECT=$(zenity --entry --title="xmanager" --text="Redirect to IP Address:" --entry-text "")
+				        if [[ $? -eq 1 ]]; then
+                				return 1;
+        				fi
 					if [ "$REDIRECT" ]
 	  					then
 	    						NAT_HOST_REDIRECT="--to-destination $REDIRECT"
 					fi
 					REDIRECTPORT=$(zenity --entry --title="xmanager" --text="Redirect to port:" --entry-text "")
+					if [[ $? -eq 1 ]]; then
+                				return 1;
+        				fi
 					if [ "REDIRECTPORT" ]
 	  					then
 	    						NAT_PORT_REDIRECT="--to-ports $REDIRECTPORT"
@@ -141,6 +162,9 @@ firewall(){
 			#PARAMETROS NAO NAT"
     			else
         			CHAIN=$(zenity --list --title="xmanager" --column="Chain" "INPUT" "OUTPUT" "FORWARD")
+			        if [[ $? -eq 1 ]]; then
+                			return 1;
+        			fi
         			POLICY=$(zenity --list --title="xmanager" --column="Default Policy" "ACCEPT" "DROP")
     			fi
 	    		if [ "$OPERATION" == "Policy" ]
@@ -156,8 +180,14 @@ firewall(){
 				 		OPERATION="-D"
 				fi
 				PROTOCOL=$(zenity --list --title="xmanager" --text="Transport Protocol" --column="Transport Protocol" "tcp" "udp")
+			        if [[ $? -eq 1 ]]; then
+                			return 1;
+        			fi
 				#DESTINATION IP
 				DH=$(zenity --list --title="xmanager" --text "Destination IP Address" --column="Destination IP Address" "All" "Add")
+				if [[ $? -eq 1 ]]; then
+                			return 1;
+        			fi
 				if [ "$DH" == "Add" ]
 		  			then
 		    				DHOST=$(zenity --entry --title="xamanager" --text="Destination IP Address:" --entry-text "")
@@ -170,6 +200,9 @@ firewall(){
 				fi
 				#SOURCE IP
 				SH=$(zenity --list --title="xmanager" --text="Source IP Address" --column="Source IP Address" "All" "Add")
+			        if [[ $? -eq 1 ]]; then
+        			        return 1;
+        			fi
 				if [ "$SH" == "Add" ]
 	  				then
 	    					SHOST=$(zenity --entry --title="xamanager" --text="Source IP Address:" --entry-text "")
@@ -182,6 +215,9 @@ firewall(){
 				fi
 				#DESTINATION PORT
 				DP=$(zenity --list --title="xmanager" --text="Destination Port" --column="Destination Port" "All" "Add")
+			        if [[ $? -eq 1 ]]; then
+                			return 1;
+        			fi
 				if [ "$DP" == "Add" ]
 		  			then
 		    				DPORT=$(zenity --entry --title="xamanager" --text="Destination Port:" --entry-text "")
@@ -194,6 +230,9 @@ firewall(){
 				fi
 				#SOURCE PORT
 				SP=$(zenity --list --title="xmanager" --text="Source Port" --column="Source Port" "All" "Add")
+			        if [[ $? -eq 1 ]]; then
+                			return 1;
+        			fi
 				if [ "$SP" == "Add" ]
 	  				then
 	    					SPORT=$(zenity --entry --title="xamanager" --text="Source Port:" --entry-text "")
@@ -208,17 +247,16 @@ firewall(){
 				iptables $ISNAT $OPERATION $CHAIN -p $PROTOCOL $DHOST $SHOST $DPORT $SPORT -j $POLICY $NATPOLICY $NAT_HOST_REDIRECT $NAT_PORT_REDIRECT
 				#Erase '#' for debug \/
 				#echo "iptables $ISNAT $OPERATION $CHAIN -p $PROTOCOL $DHOST $SHOST $DPORT $SPORT -j $POLICY $NATPOLICY $NAT_HOST_REDIRECT $NAT_PORT_REDIRECT"
-				zenity --info --text="Done."
+				zenity --info --text="Done, command: iptables $ISNAT $OPERATION $CHAIN -p $PROTOCOL $DHOST $SHOST $DPORT $SPORT -j $POLICY $NATPOLICY $NAT_HOST_REDIRECT $NAT_PORT_REDIRECT."
 			fi
 		fi
 }
 
 inspect_user(){
-USER=$(zenity --list \
-	--title="xmanager" \
-	--column="Username" `cat /etc/passwd | cut -d ":" -f 1` \
-	--width=600 \
-	--height=400)
+USER=$(zenity --list --title="xmanager" --column="Username" `cat /etc/passwd | cut -d ":" -f 1` --width=600 --height=400)
+if [[ $? -eq 1 ]]; then
+	return 1;
+fi
 #BUSCA INFORMACAO DO USUARIO
 USER_GROUPS=$(echo `id $USER`)
 echo "-----------------------------------------[INFO]---------------------------------------------" >> out.txt
@@ -226,12 +264,7 @@ finger $USER >> out.txt
 echo "-----------------------------------------[GROUPS]------------------------------------------" >> out.txt
 echo $USER_GROUPS >> out.txt
 echo "----------------------------------------------------------------------------------------------" >> out.txt
-zenity --text-info \
-	--title=$USER\
-	--filename=out.txt\
-	--text="$USER Info"\
-	--width=600\
-	--height=400
+zenity --text-info --title=$USER --filename=out.txt --text="$USER Info" --width=600 --height=400
 rm out.txt
 }
 
@@ -255,50 +288,36 @@ download_upload(){
 }
 
 services_management(){
-SERVICE=$(zenity --list \
-	--title "xmanager"\
-	--column="Services" `ls /etc/init.d`\
-	--width=600\
-	--height=400)
-OPTION=$(zenity --list \
-	  --title "xmanager" \
-	  --column="Option"\
-	  --width=600 --height=400 \
-	  "Status" "Start" "Stop" "Restart" "Reload")
+SERVICE=$(zenity --list --title "xmanager" --column="Services" `ls /etc/init.d` --width=600 --height=400)
+if [[ $? -eq 1 ]]; then
+	return 1;
+fi
+OPTION=$(zenity --list --title "xmanager" --column="Option" --width=600 --height=400 "Status" "Start" "Stop" "Restart" "Reload")
 if [ "$OPTION" == "Status" ]
   then
     STATUS=`service $SERVICE status`
     echo $STATUS > out.txt
-    zenity --text-info \
-	--title=$SERVICE\
-	--filename=out.txt\
-	--text="STATUS"\
-	--width=600\
-	--height=400
+    zenity --text-info --title=$SERVICE --filename=out.txt --text="STATUS" --width=600 --height=400
     rm out.txt
 
 elif [ "$OPTION" == "Start" ]
   then
     service $SERVICE start
-    zenity --info \
-    --text="Asked for $SERVICE to start, check status."
+    zenity --info --text="Asked for $SERVICE to start, check status."
 elif [ "$OPTION" == "Stop" ]
   then
     service $SERVICE stop
-    zenity --info \
-    --text="Asked for $SERVICE to stop, check status."
+    zenity --info --text="Asked for $SERVICE to stop, check status."
 
 elif [ "$OPTION" == "Restart" ]
   then
     service $SERVICE restart
-    zenity --info \
-    --text="Asked for $SERVICE to restart, check status."
+    zenity --info --text="Asked for $SERVICE to restart, check status."
 
 elif [ "$OPTION" == "Reload" ]
   then
     sudo service $SERVICE reload
-    zenity --info \
-    --text="Asked for $SERVICE to reload, check status."
+    zenity --info --text="Asked for $SERVICE to reload, check status."
 fi
 }
 
@@ -363,6 +382,9 @@ inspect_software(){
 manage_packages(){
 	SW=$(dpkg -l | grep ^ii | sed 's_  _\t_g' | cut -f 2)
 	SOFTWARE=$(zenity --list --title="xmanager" --text="Installed Packages" --column="Installed Packages" $SW --width=600 --height=400)
+	if [[ $? -eq 1 ]]; then
+		return 1;
+	fi
 	OPTION=$(zenity --list --title="xmanager" --text="Options" --column="Option" "Information" "Reconfigure" "Uninstall" "Reinstall")
 	if [ "$OPTION" == "Information" ]
 		then
@@ -405,57 +427,49 @@ runscript(){
 }
 
 while true
-  do
-  ans=$(zenity --list  \
-		--title "xmanager" \
-		--text "by: m4n3dw0lf" \
-		--column "Service" \
-		--width=600 --height=400\
-		"User Information" "Software Information" \
-		"Hardware Information" "Firewall Management" \
-		"Services Management" "Package Management" "Download/Upload" "Run Script"\
-		"Exit")
+	do
+  		ans=$(zenity --list --title "xmanager" --text "by: m4n3dw0lf" --column "Service" --width=600 --height=400 "User Information" "Software Information"  "Hardware Information" "Firewall Management" "Services Management" "Package Management" "Download/Upload" "Run Script" "Exit")
 
-  if [ "$ans" == "User Information" ]
-    then
-      inspect_user
-  elif [ "$ans" == "Software Information" ]
-    then
-      inspect_software
-  elif [ "$ans" == "Hardware Information" ]
-    then
-      inspect_hardware
-  elif [ "$ans" == "Firewall Management" ]
-    then
-	if [[ $EUID -ne 0 ]]
-	  then
-	    zenity --info --text="Need to run with root privileges"
-	    continue
-	  fi
-      firewall
-  elif [ "$ans" == "Package Management" ]
-    then
-      manage_packages
-  elif [ "$ans" == "Services Management" ]
-    then
-	if [[ $EUID -ne 0 ]]
-	  then
-	    zenity --info --text="Need to run with root privileges"
-            continue
-	  fi
-      services_management
-  elif [ "$ans" == "Download/Upload" ]
-    then
-      download_upload
-  elif [ "$ans" == "Run Script" ]
-    then
-      runscript
-  elif [ "$ans" == "Exit" ]
-    then
-      exit
-  else
-    exit
-  fi
-done
+ 		if [ "$ans" == "User Information" ]
+    			then
+      				inspect_user
+  		elif [ "$ans" == "Software Information" ]
+    			then
+      				inspect_software
+  		elif [ "$ans" == "Hardware Information" ]
+    			then
+      				inspect_hardware
+  		elif [ "$ans" == "Firewall Management" ]
+    			then
+				if [[ $EUID -ne 0 ]]
+	 	 			then
+	    					zenity --info --text="Need to run with root privileges"
+	    					continue
+	  			fi
+      				firewall
+  		elif [ "$ans" == "Package Management" ]
+    			then
+      				manage_packages
+  		elif [ "$ans" == "Services Management" ]
+    			then
+				if [[ $EUID -ne 0 ]]
+	  				then
+	    					zenity --info --text="Need to run with root privileges"
+            					continue
+	  			fi
+      				services_management
+		elif [ "$ans" == "Download/Upload" ]
+    			then
+      				download_upload
+  		elif [ "$ans" == "Run Script" ]
+    			then
+      				runscript
+  		elif [ "$ans" == "Exit" ]
+    			then
+      				exit
+  		else
+    			exit
+  		fi
+	done
 
 
