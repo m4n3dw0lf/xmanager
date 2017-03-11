@@ -426,13 +426,91 @@ runscript(){
 	.$FILE
 }
 
+manage_user(){
+        if [[ $EUID -ne 0 ]]
+                then
+                        zenity --info --text="Need to run with root privileges"
+                        return 1;
+                fi
+        OPTION=$(zenity --list --title="xmanager" --text="Options" --column="Option" "Create User" "Delete User" "Add user into group" "Remove user from group" "Change user password" "Read user history" --width=600 --height=400)
+        if [ "$OPTION" == "Create User" ]
+                then
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+                        ENTRY=$(zenity --title "User Creation" --username --password)
+                        USERNAME=$(echo $ENTRY | cut -d '|' -f1)
+                        PASSWORD=$(echo $ENTRY | cut -d '|' -f2)
+                        useradd $USERNAME -m -d /home/$USERNAME
+                        echo $USERNAME:$PASSWORD | chpasswd
+        elif [ "$OPTION" == "Delete User" ]
+                then
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+                        userdel $USER
+        elif [ "$OPTION" == "Add user into group" ]
+                then
+                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+                        SYSGROUPS=`cat /etc/group | cut -d : -f 1`
+                        GROUP=$(zenity --list --title="xmanager" --text="Select Group" --column="Group" $SYSGROUPS --width=600 --height=400)
+                        usermod -aG $GROUP $USER
+        elif [ "$OPTION" == "Remove user from group" ]
+                then
+                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+                        USERGROUPS=$(groups $USER | cut -d ":" -f 2)
+                        GROUP=$(zenity --list --title="xmanager" --text="Select Group" --column="Group" $USERGROUPS --width=600 --height=400)
+                        gpasswd -d $USER $GROUP
+	elif [ "$OPTION" == "Read user history" ]
+		then
+                        USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+			cp /home/$USRNAME/.bash_history out.txt
+			zenity --text-info --title="xmanager" --filename=out.txt --text="$USRNAME History" --width=600 --height=400
+			rm out.txt
+	elif [ "$OPTION" == "Change user password" ]
+		then
+                        USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+			NEWPASSWD=$(zenity --title="xmanager" --password --text="New Password")
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+			CNEWPASSWD=$(zenity --title="xmanager" --password --text="Confirm New Password")
+                        if [[ $? -eq 1 ]]; then
+                                return 1;
+                        fi
+			if [ "$NEWPASSWD" == "$CNEWPASSWD" ]
+				then
+                			echo $USRNAME:$NEWPASSWD | chpasswd
+					zenity --info --text="Done."
+			else
+				zenity --info --text="Passwords don't match."
+			fi
+        fi
+}
+
 while true
 	do
-  		ans=$(zenity --list --title "xmanager" --text "by: m4n3dw0lf" --column "Service" --width=600 --height=400 "User Information" "Software Information"  "Hardware Information" "Firewall Management" "Services Management" "Package Management" "Download/Upload" "Run Script" "Exit")
+  		ans=$(zenity --list --title "xmanager" --text "by: m4n3dw0lf" --column "Service" --width=600 --height=400 "User Information" "User Management" "Software Information" "Hardware Information" "Firewall Management" "Services Management" "Package Management" "Download/Upload" "Run Script" "Exit")
 
  		if [ "$ans" == "User Information" ]
     			then
       				inspect_user
+		elif [ "$ans" == "User Management" ]
+			then
+				manage_user
   		elif [ "$ans" == "Software Information" ]
     			then
       				inspect_software
