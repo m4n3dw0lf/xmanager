@@ -441,7 +441,7 @@ manage_user(){
                         ENTRY=$(zenity --title "User Creation" --username --password)
                         USERNAME=$(echo $ENTRY | cut -d '|' -f1)
                         PASSWORD=$(echo $ENTRY | cut -d '|' -f2)
-                        useradd $USERNAME -m -d /home/$USERNAME
+                        useradd $USERNAME -m -d /home/$USERNAME -s /bin/bash
                         echo $USERNAME:$PASSWORD | chpasswd
         elif [ "$OPTION" == "Delete User" ]
                 then
@@ -468,86 +468,100 @@ manage_user(){
                         USERGROUPS=$(groups $USER | cut -d ":" -f 2)
                         GROUP=$(zenity --list --title="xmanager" --text="Select Group" --column="Group" $USERGROUPS --width=600 --height=400)
                         gpasswd -d $USER $GROUP
-	elif [ "$OPTION" == "Read user history" ]
-		then
+        elif [ "$OPTION" == "Read user history" ]
+                then
                         USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
-			cp /home/$USRNAME/.bash_history out.txt
-			zenity --text-info --title="xmanager" --filename=out.txt --text="$USRNAME History" --width=600 --height=400
-			rm out.txt
-	elif [ "$OPTION" == "Change user password" ]
-		then
+                        zenity --text-info --title="xmanager" --filename=/home/$USRNAME/.bash_history --text="$USRNAME History" --width=600 --height=400
+        elif [ "$OPTION" == "Change user password" ]
+                then
                         USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
-			NEWPASSWD=$(zenity --title="xmanager" --password --text="New Password")
+                        NEWPASSWD=$(zenity --title="New password" --password )
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
-			CNEWPASSWD=$(zenity --title="xmanager" --password --text="Confirm New Password")
+                        CNEWPASSWD=$(zenity --title="Confirm new password" --password )
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
-			if [ "$NEWPASSWD" == "$CNEWPASSWD" ]
-				then
-                			echo $USRNAME:$NEWPASSWD | chpasswd
-					zenity --info --text="Done."
-			else
-				zenity --info --text="Passwords don't match."
-			fi
+                        if [ "$NEWPASSWD" == "$CNEWPASSWD" ]
+                                then
+                                        echo $USRNAME:$NEWPASSWD | chpasswd
+                                        zenity --info --text="Done."
+                        else
+                                zenity --info --text="Passwords don't match."
+                        fi
         fi
 }
+main(){
+	while true
+		do
+  			ans=$(zenity --list --title "xmanager" --text "by: m4n3dw0lf" --column "Service" --width=600 --height=400 "User Information" "User Management" "System Information" "Hardware Information" "Firewall Management" "Services Management" "Software Management" "Download/Upload" "Run Script" "Exit")
 
-while true
-	do
-  		ans=$(zenity --list --title "xmanager" --text "by: m4n3dw0lf" --column "Service" --width=600 --height=400 "User Information" "User Management" "Software Information" "Hardware Information" "Firewall Management" "Services Management" "Package Management" "Download/Upload" "Run Script" "Exit")
+ 			if [ "$ans" == "User Information" ]
+    				then
+      					inspect_user
+			elif [ "$ans" == "User Management" ]
+				then
+					manage_user
+  			elif [ "$ans" == "System Information" ]
+    				then
+      					inspect_software
+  			elif [ "$ans" == "Hardware Information" ]
+    				then
+      					inspect_hardware
+  			elif [ "$ans" == "Firewall Management" ]
+    				then
+					if [[ $EUID -ne 0 ]]
+	 		 			then
+	    						zenity --info --text="Need to run with root privileges"
+	    						continue
+	  				fi
+      					firewall
+  			elif [ "$ans" == "Software Management" ]
+    				then
+      					manage_packages
+  			elif [ "$ans" == "Services Management" ]
+    				then
+					if [[ $EUID -ne 0 ]]
+	  					then
+	    						zenity --info --text="Need to run with root privileges"
+            						continue
+	  				fi
+      					services_management
+			elif [ "$ans" == "Download/Upload" ]
+    				then
+      					download_upload
+  			elif [ "$ans" == "Run Script" ]
+    				then
+      					runscript
+  			elif [ "$ans" == "Exit" ]
+    				then
+      					exit
+  			else
+    				exit
+  			fi
+		done
+}
 
- 		if [ "$ans" == "User Information" ]
-    			then
-      				inspect_user
-		elif [ "$ans" == "User Management" ]
-			then
-				manage_user
-  		elif [ "$ans" == "Software Information" ]
-    			then
-      				inspect_software
-  		elif [ "$ans" == "Hardware Information" ]
-    			then
-      				inspect_hardware
-  		elif [ "$ans" == "Firewall Management" ]
-    			then
-				if [[ $EUID -ne 0 ]]
-	 	 			then
-	    					zenity --info --text="Need to run with root privileges"
-	    					continue
-	  			fi
-      				firewall
-  		elif [ "$ans" == "Package Management" ]
-    			then
-      				manage_packages
-  		elif [ "$ans" == "Services Management" ]
-    			then
-				if [[ $EUID -ne 0 ]]
-	  				then
-	    					zenity --info --text="Need to run with root privileges"
-            					continue
-	  			fi
-      				services_management
-		elif [ "$ans" == "Download/Upload" ]
-    			then
-      				download_upload
-  		elif [ "$ans" == "Run Script" ]
-    			then
-      				runscript
-  		elif [ "$ans" == "Exit" ]
-    			then
-      				exit
-  		else
-    			exit
-  		fi
-	done
+if [[ "$@" == "-x" ]]
+	then
+		echo "Function not ready yet"
 
+elif [[ "$@" == "-h" ]]
+	then
+echo
+echo "XMANAGER v0.1"
+echo
+echo "-h    print help message."
+echo "-x    configure X11 forwarding."
+echo
 
+else
+	main > /dev/null 2>&1 &
+fi
