@@ -2,7 +2,7 @@
 Graphical GNU/Linux Server Management script with Zenity</br>
 Designed and tested in a Debian 9
 
-![alt text] (xmanager.png)
+! [alt text] (xmanager.png)
 
 ##Instalation
 ```
