@@ -3,7 +3,7 @@ GNU/Linux Server/Firewall Management script with dialog</br>
 Designed and tested in a CentOS 6.9
 
 
-##Instalation
+## Instalation
 ```
 #!/bin/bash
 git clone https://github.com/m4n3dw0lf/xmanager
