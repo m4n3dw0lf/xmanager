@@ -408,18 +408,18 @@ manage_user(){
         fi
 }
 
-lvm(){
-	opt=$(dialog --title "xmanager" --radiolist "Option" 0 0 0  "Extend Logs LVM" "" OFF "Mount Logs LVM" "" ON --stdout)
+lvm_f(){
+	opt=$(dialog --title "xmanager" --radiolist "Option" 0 0 0  "Extend Logs LVM" "" OFF "Mount Logs LVM" "" OFF "List LVMs" "" ON --stdout)
 	#Extende a LVM de backups
 	if [ "$opt" == "Extend Logs LVM" ]; then
+		gb=$(dialog --title "xmanager" --inputbox "Number in GBs: " 0 0 --stdout)
 		lvextend -L +"$gb"G /dev/mapper/vol_group-logs
 		resize2fs /dev/mapper/vol_groups-logs
 	#Monta o lvm no /firewall_log
-	else if [ "$opt" == "Mount Logs LVM" ]; then
+	elif [ "$opt" == "Mount Logs LVM" ]; then
 		mount /dev/mapper/vol_group-logs /firewall_log
-	fi
 	#Lista lvms
-	else if [ "$opt" == "List LVMs" ]; then
+	elif [ "$opt" == "List LVMs" ]; then
 		list=$(lvs)
 		dialog --title "xmanager - Firewall Management" --msgbox "$list" 0 0
 	fi
@@ -444,7 +444,7 @@ while true; do
 		1) inspect_user ;;
 		2) manage_user ;;
 		3) firewall ;;
-		4) lvm ;;
+		4) lvm_f ;;
 		0) break ;;
 	esac
 done
