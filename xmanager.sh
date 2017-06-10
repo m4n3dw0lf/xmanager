@@ -1,20 +1,15 @@
 #!/bin/bash
 
-# Copyright (c) 2017 Angelo Moura
+firewall_logging(){
+	iptables -A INPUT -p tcp --dport 22 -j LOG -m state --state NEW --log-level debug --log-prefix "[+] SSH Connection: "
+	iptables -A INPUT -p icmp --icmp-type echo-request -j LOG -m limit --limit 1/s --log-level debug --log-prefix "[+] ICMP request: "
+	iptables -A INPUT -p icmp --icmp-type echo-reply -j LOG -m limit --limit 1/s --log-level debug --log-prefix "[+] ICMP reply: "
+	iptables -A INPUT -p udp --dport 67 -j LOG --log-level debug --log-prefix "[+] DHCP Client: "
+	iptables -A INPUT -p udp --sport 67 -j LOG --log-level debug --log-prefix "[+] DHCP Server: "
+	iptables -A INPUT -p udp --dport 53 -j LOG --log-level debug --log-prefix "[+] DNS Client: "
+	iptables -A INPUT -p udp --sport 53 -j LOG --log-level debug --log-prefix "[+] DNS Server: "
+}
 
-# This file is part of the program xmanager
-# xmanager is free software; you can redistribute it and/or
-# modify it under the terms of the GNU General Public License as
-# published by the Free Software Foundation; either version 3 of the
-# License, or (at your option) any later version.
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-# General Public License for more details.
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
-# USA
 firewallmax(){
 	#LIMPA TODAS AS REGRAS
 	iptables -F
@@ -23,16 +18,35 @@ firewallmax(){
 	iptables -t nat -F
 	iptables -t nat -X
 	iptables -t nat --flush
-	#POLITICAS
-	iptables -P INPUT DROP
-	iptables -P OUTPUT DROP
-	iptables -P FORWARD DROP
+	#CHAMA FUNCAO DE LOGGING
+	firewall_logging
 	#LIBERA LOOPBACK
-	iptables -A INPUT -i lo -d 127.0.0.1 -j ACCEPT
-	#APENAS PACOTES ASSOCIADOS A CONEXOES ESTABELECIDAS E RELACIONADAS
-	iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-	iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	#APENAS PACOTES ASSOCIADOS A CONEXOES ESTABELECIDAS PELO HOST
+        iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+        iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+	#PROTECTIONS
+	#Tear Drop
+	iptables -A INPUT -f -j DROP
+	#Syn Flood
+	iptables -A INPUT -p tcp --dport 80 --syn -m limit --limit 10/s -j ACCEPT
+	iptables -A INPUT -p tcp --dport 80 --syn -j DROP
+
 	#EXCESSOES A POLITICAS
+	#HABILITA SSH APENAS PARA UM HOST
+        iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+        iptables -A OUTPUT -p tcp --sport 22 -m state --state RELATED,ESTABLISHED -j ACCEPT
+	sourceip=$(dialog --title "xmanager - Firewall Management:" --radiolist "Source IP Address" 0 0 0  "All" "" OFF "Add" "" ON --stdout)
+        if [[ $? -eq 1 ]]; then
+        	return 1;
+        fi
+        if [ "$sourceip" == "Add" ]
+        	then
+			shost=$(dialog --title "xmanager - Firewall Management" --inputbox "WARNING: Enter the single IP Address that will be allowed to connect to this machine: " 0 0 --stdout)
+                        iptables -D INPUT -p tcp --dport 22 -j ACCEPT
+                        iptables -A INPUT -p tcp --source $shost --dport 22 -j ACCEPT
+        fi
 	#DNS
 	iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
 	#DHCP
@@ -41,7 +55,13 @@ firewallmax(){
 	iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
 	#HTTP
 	iptables -A OUTPUT -p tcp --dport 80 -j ACCEPT
+	#POLITICAS
+	iptables -P INPUT DROP
+	iptables -P OUTPUT DROP
+	iptables -P FORWARD DROP
+
 }
+
 firewallmed(){
 	iptables -F
 	iptables -X
@@ -49,13 +69,15 @@ firewallmed(){
 	iptables -t nat -F
 	iptables -t nat -X
 	iptables -t nat --flush
+	firewall_logging
 	iptables -P INPUT DROP
 	iptables -P FORWARD DROP
 	iptables -P OUTPUT ACCEPT
-	iptables -A INPUT -i lo -d 127.0.0.1 -j ACCEPT
-	iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-	iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+	iptables -A INPUT -i lo -j ACCEPT
+	iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+	iptables -A INPUT -p icmp -j ACCEPT
 }
+
 firewallmin(){
 	iptables -F
 	iptables -X
@@ -63,505 +85,366 @@ firewallmin(){
 	iptables -t nat -F
 	iptables -t nat -X
 	iptables -t nat --flush
+	firewall_logging
 	iptables -P INPUT ACCEPT
 	iptables -P FORWARD ACCEPT
 	iptables -P OUTPUT ACCEPT
 }
 
+
 firewall(){
-	OPTION=$(zenity --list --title="xmanager" --column="Services" "Show Rules" "Profile Editor" "Apply new policy...")
+        #Se o usuario eh root
+        if [[ $EUID -ne 0 ]];then
+                dialog --title 'xmanager' --msgbox 'Need to run with root privileges' 0 0
+                return 1;
+        fi
+	#5 OPCOES PRINCIPAIS DO DIALOGO DE FIREWALL
+	option=$(dialog --title "xmanager - Firewall Management:" --radiolist "Option" 0 0 0  "Show Rules" "" ON "Logging" "" OFF "Profile" "" OFF "Apply new policy..." "" OFF "Add Static ARP Entry..." "" OFF "Allow ICMP from host..." "" OFF --stdout)
         if [[ $? -eq 1 ]]; then
                 return 1;
         fi
-	if [ "$OPTION" == "Show Rules" ]
+	#MOSTRA REGRAS DE FIREWALL
+	if [ "$option" == "Show Rules" ]
   		then
-    			LIST=$(iptables -L)
-    			echo $LIST > out.txt
-    			zenity --text-info --title="xmanager" --filename=out.txt --text="Firewall Rules" --width=600 --height=400
-    			rm out.txt
-
-	elif [ "$OPTION" == "Profile Editor" ]
+    			list=$(iptables -L)
+			dialog --title "xmanager - Firewall Management" --msgbox "$list" 0 0
+	#Liberar o ICMP apenas para determinado host
+	elif [ "$option" == "Allow ICMP from host..." ]
 		then
-    			MODE=$(zenity --list --title="xmanager" --column="Profile" "Maximum Security" "Medium Security" "Minimum Security")
-    			if [ "$MODE" == "Maximum Security" ]
+			ip=$(dialog --title "xmanager - Firewall Management" --inputbox "IP Address: " 0 0 --stdout)
+			iptables -A INPUT -p icmp --icmp-type 8 -s $ip -j ACCEPT
+			iptables -A OUTPUT -p icmp --icmp-type 0 -d $ip -j ACCEPT
+			dialog --title "xmanager - Firewall Management" --msgbox "Done" 0 0
+	#Seta uma entrada estatica na tabela ARP
+	elif [ "$option" == "Add Static ARP Entry..." ]
+		then
+			ip=$(dialog --title "xmanager - Firewall Management" --inputbox "IP Address: " 0 0 --stdout)
+			mac=$(dialog --title "xmanager - Firewall Management" --inputbox "MAC Address: " 0 0 --stdout)
+			arp -s "$ip" "mac"
+			dialog --title "xmanager - Firewall Management" --msgbox "Done" 0 0
+
+	elif [ "$option" == "Logging" ]
+		then
+			dialog --tailbox /var/log/iptables.log 0 0
+
+	#SELECIONA A POLITICA PADRAO DO FIREWALL, MINIMUN, MEDIUM, MAXIMUM (FUNCOES ACIMA)
+	elif [ "$option" == "Profile" ]
+		then
+    			mode=$(dialog --title "xmanager - Firewall Management:" --radiolist "Select the Security Profile: " 0 0 0 "Maximum Security" "" OFF "Medium Security" "" OFF "Minimum Security" "" OFF --stdout)
+    			if [ "$mode" == "Maximum Security" ]
       				then
 					firewallmax
-					zenity --info --text="Done"
-    			elif [ "$MODE" == "Medium Security" ]
+    			elif [ "$mode" == "Medium Security" ]
       				then
 					firewallmed
-					zenity --info --text="Done"
-    			elif [ "$MODE" == "Minimum Security" ]
+    			elif [ "$mode" == "Minimum Security" ]
       				then
 					firewallmin
-					zenity --info --text="Done"
 			fi
+		        if [[ $? -eq 1 ]]; then
+		                return 1;
+		        fi
+			dialog --title "xmanager - Firewall Management" --msgbox "Done" 0 0
+
 
 	#CADEIA DE DIALOGOS DO ZENITY PARA PREENCHER UM COMANDO DO IPTABLES
-	elif [ "$OPTION" == "Apply new policy..." ]
+	elif [ "$option" == "Apply new policy..." ]
 		then
-	        	TABLE=$(zenity --list --title="xmanager" --column="Table" "Default" "NAT")
 		        if [[ $? -eq 1 ]]; then
         		        return 1;
         		fi
-       	 		ISNAT=""
-			OPERATION=""
-			CHAIN=""
-			PROTOCOL=""
-			DHOST=""
-			SHOST=""
-			DPORT=""
-			SPORT=""
-			POLICY=""
-			NAT=""
-			NATPOLICY=""
-			NAT_HOST_REDIRECT=""
-			NAT_PORT_REDIRECT=""
-    			OPERATION=$(zenity --list --title="xmanager" --column="Operation" "Policy" "Add" "Delete")
+			operation=""
+			chain=""
+			protocol=""
+			dhost=""
+			shost=""
+			dport=""
+			sport=""
+			policy=""
+			#ADICIONAR OU REMOVER UMA REGRA
+			operation=$(dialog --title "xmanager - Firewall Management:" --radiolist "Operation: " 0 0 0 "Chain Policy" "" OFF "Add" "" OFF "Delete" "" OFF --stdout)
 			if [[ $? -eq 1 ]]; then
                 		return 1;
         		fi
-			#PREENCHENDO PARAMETROS NAT
-    			if [ "$TABLE" == "NAT" ]
+			#CADEIA IPTABLES
+			chain=$(dialog --title "xmanager - Firewall Management:" --radiolist "Chain" 0 0 0 "INPUT" "" OFF "OUTPUT" "" OFF "FORWARD" "" OFF --stdout)
+			if [[ $? -eq 1 ]]; then
+                		return 1;
+        		fi
+			#POLITICA DE TRATATIVA DO PACOTE
+			policy=$(dialog --title "xmanager - Firewall Management:" --radiolist "Default Policy: " 0 0 0 "ACCEPT" "" OFF "DROP" "" OFF "REJECT" "" OFF --stdout)
+	    		if [ "$operation" == "Chain Policy" ]
 				then
-					ISNAT="-t nat"
-					ISFORWARDING=$(cat /proc/sys/net/ipv4/ip_forward)
-					if [ "$ISFORWARDING" == "0" ]
-						then
-							zenity --info --text="IP Forwarding is disabled!"
-					    		ENNAT=$(zenity --list --title="xmanager" --column="Forwarding Option" "Enable" "Disable")
-							if [[ $? -eq 1 ]]; then
-						                return 1;
-        						fi
-					fi
-				    	if [ "$ENNAT" == "Enable" ]
-				        	then
-	        					echo 1 > "/proc/sys/net/ipv4/ip_forward"
-	    				fi
-    					CHAIN=$(zenity --list --title="xmanager" --column="Chain" "PREROUTING" "POSTROUTING")
-				        if [[ $? -eq 1 ]]; then
-                				return 1;
-        				fi
-					REDIRECT=$(zenity --entry --title="xmanager" --text="Redirect to IP Address:" --entry-text "")
-				        if [[ $? -eq 1 ]]; then
-                				return 1;
-        				fi
-					if [ "$REDIRECT" ]
-	  					then
-	    						NAT_HOST_REDIRECT="--to-destination $REDIRECT"
-					fi
-					REDIRECTPORT=$(zenity --entry --title="xmanager" --text="Redirect to port:" --entry-text "")
-					if [[ $? -eq 1 ]]; then
-                				return 1;
-        				fi
-					if [ "REDIRECTPORT" ]
-	  					then
-	    						NAT_PORT_REDIRECT="--to-ports $REDIRECTPORT"
-					fi
-					NATPOLICY=$(zenity --list --title="xmanager" --column="NAT Policy" "REDIRECT" "DNAT" "SNAT" "ACCEPT" "DROP")
-			#PARAMETROS NAO NAT"
-    			else
-        			CHAIN=$(zenity --list --title="xmanager" --column="Chain" "INPUT" "OUTPUT" "FORWARD")
-			        if [[ $? -eq 1 ]]; then
-                			return 1;
-        			fi
-        			POLICY=$(zenity --list --title="xmanager" --column="Default Policy" "ACCEPT" "DROP")
-    			fi
-	    		if [ "$OPERATION" == "Policy" ]
-				then
-	    				iptables $ISNAT -P $CHAIN $POLICY
-					zenity --info --text="Done"
+	    				iptables -P $chain $policy
+					dialog --title "xmanager - Firewall Management" --msgbox "Done" 0 0
 	    		else
-				if [ "$OPERATION" == "Add" ]
+				if [ "$operation" == "Add" ]
 					then
-				   		OPERATION="-A"
-				elif [ "$OPERATION" == "Delete" ]
+				   		operation="-A"
+				elif [ "$operation" == "Delete" ]
 					then
-				 		OPERATION="-D"
+				 		operation="-D"
 				fi
-				PROTOCOL=$(zenity --list --title="xmanager" --text="Transport Protocol" --column="Transport Protocol" "tcp" "udp")
+				#PROTOCOLO
+				protocol=$(dialog --title "xmanager - Firewall Management" --radiolist "Protocol" 0 0 0 "tcp" "" OFF "udp" "" OFF "icmp" "" OFF --stdout)
 			        if [[ $? -eq 1 ]]; then
                 			return 1;
         			fi
 				#DESTINATION IP
-				DH=$(zenity --list --title="xmanager" --text "Destination IP Address" --column="Destination IP Address" "All" "Add")
+				dh=$(dialog --title "xmanager - Firewall Management" --radiolist "Destination IP Address" 0 0 0 "All" "" ON "Add" "" OFF --stdout)
 				if [[ $? -eq 1 ]]; then
                 			return 1;
         			fi
-				if [ "$DH" == "Add" ]
+				if [ "$dh" == "Add" ]
 		  			then
-		    				DHOST=$(zenity --entry --title="xamanager" --text="Destination IP Address:" --entry-text "")
-		    				if [ "$DHOST" ]
+						dhost=$(dialog --title "xmanager - Firewall Management" --inputbox "Destination IP Address: " 0 0 --stdout)
+		    				if [ "$dhost" ]
 							then
-			  					DHOST="-d $DHOST"
+			  					dhost="-d $dhost"
 						else
-							DHOST=""
+							dhost=""
 			   			fi
 				fi
 				#SOURCE IP
-				SH=$(zenity --list --title="xmanager" --text="Source IP Address" --column="Source IP Address" "All" "Add")
+				sh=$(dialog --title "xmanager - Firewall Management" --radiolist "Source IP Address" 0 0 0 "All" "" ON "Add" "" OFF --stdout)
 			        if [[ $? -eq 1 ]]; then
         			        return 1;
         			fi
-				if [ "$SH" == "Add" ]
+				if [ "$sh" == "Add" ]
 	  				then
-	    					SHOST=$(zenity --entry --title="xamanager" --text="Source IP Address:" --entry-text "")
-	    					if [ "$SHOST" ]
+						shost=$(dialog --title "xmanager - Firewall Management" --inputbox "Source IP Address: " 0 0 --stdout)
+	    					if [ "$shost" ]
 							then
-			  					SHOST="-d $SHOST"
+			  					shost="-d $shost"
 						else
-							SHOST=""
+							shost=""
 	    					fi
 				fi
-				#DESTINATION PORT
-				DP=$(zenity --list --title="xmanager" --text="Destination Port" --column="Destination Port" "All" "Add")
-			        if [[ $? -eq 1 ]]; then
-                			return 1;
-        			fi
-				if [ "$DP" == "Add" ]
-		  			then
-		    				DPORT=$(zenity --entry --title="xamanager" --text="Destination Port:" --entry-text "")
-		    				if [ "$DPORT" ]
-							then
-			  					DPORT="--dport $DPORT"
-						else
-							DPORT=""
-			   			fi
-				fi
-				#SOURCE PORT
-				SP=$(zenity --list --title="xmanager" --text="Source Port" --column="Source Port" "All" "Add")
-			        if [[ $? -eq 1 ]]; then
-                			return 1;
-        			fi
-				if [ "$SP" == "Add" ]
-	  				then
-	    					SPORT=$(zenity --entry --title="xamanager" --text="Source Port:" --entry-text "")
-	    					if [ "$SPORT" ]
-							then
-			  					SPORT="--sport $SPORT"
-						else
-							SPORT=""
-	    					fi
+				#PORTA DESTINO E ORIGEM CASO O PROTOCOLO NAO SEJA ICMP
+				if [ "$PROTOCOL" != "icmp" ]; then
+					#DESTINATION PORT
+					dp=$(dialog --title "xmanager - Firewall Management" --radiolist "Destination Port" 0 0 0 "All" "" ON "Add" "" OFF --stdout)
+			        	if [[ $? -eq 1 ]]; then
+                				return 1;
+        				fi
+					if [ "$dp" == "Add" ]
+		  				then
+							dport=$(dialog --title "xmanager - Firewall Management" --inputbox "Destination Port: " 0 0 --stdout)
+		    					if [ "$dport" ]
+								then
+			  						dport="--dport $dport"
+							else
+								dport=""
+			   				fi
+					fi
+					#SOURCE PORT
+					sp=$(dialog --title "xmanager - Firewall Management" --radiolist "Source Port" 0 0 0 "All" "" ON "Add" "" OFF --stdout)
+			        	if [[ $? -eq 1 ]]; then
+                				return 1;
+        				fi
+					if [ "$sp" == "Add" ]
+	  					then
+							sport=$(dialog --title "xmanager - Firewall Management" --inputbox "Source Port: " 0 0 --stdout)
+	    						if [ "$sport" ]
+								then
+			  						sport="--sport $sport"
+							else
+								sport=""
+	    						fi
+					fi
 				fi
 				#COMANDO FINAL
-				iptables $ISNAT $OPERATION $CHAIN -p $PROTOCOL $DHOST $SHOST $DPORT $SPORT -j $POLICY $NATPOLICY $NAT_HOST_REDIRECT $NAT_PORT_REDIRECT
-				#Erase '#' for debug \/
-				#echo "iptables $ISNAT $OPERATION $CHAIN -p $PROTOCOL $DHOST $SHOST $DPORT $SPORT -j $POLICY $NATPOLICY $NAT_HOST_REDIRECT $NAT_PORT_REDIRECT"
-				zenity --info --text="Done, command: iptables $ISNAT $OPERATION $CHAIN -p $PROTOCOL $DHOST $SHOST $DPORT $SPORT -j $POLICY $NATPOLICY $NAT_HOST_REDIRECT $NAT_PORT_REDIRECT."
+				iptables $operation $chain -p $protocol $dhost $shost $dport $sport -j $policy
+				dialog --title "xmanager - Firewall Management" --msgbox "Done, command: iptables $operation $chain -p $protocol $dhost $shost $dport $sport -j $policy" 0 0
 			fi
 		fi
 }
+#ACABA AS FUNCTIONS DE FIREWALL
 
 inspect_user(){
-USER=$(zenity --list --title="xmanager" --column="Username" `cat /etc/passwd | cut -d ":" -f 1` --width=600 --height=400)
-if [[ $? -eq 1 ]]; then
-	return 1;
-fi
-#BUSCA INFORMACAO DO USUARIO
-USER_GROUPS=$(echo `id $USER`)
-echo "-----------------------------------------[INFO]---------------------------------------------" >> out.txt
-finger $USER >> out.txt
-echo "-----------------------------------------[GROUPS]------------------------------------------" >> out.txt
-echo $USER_GROUPS >> out.txt
-echo "----------------------------------------------------------------------------------------------" >> out.txt
-zenity --text-info --title=$USER --filename=out.txt --text="$USER Info" --width=600 --height=400
-rm out.txt
-}
-
-download_upload(){
-      	MODE=$(zenity --list --title="Opção" --column="Seleção" "Upload" "Download")
-	if [ "$MODE" == "Upload" ]
-      		then
-        		zenity --info --text="Selecione o arquivo para upload."
-            		FILE=$(zenity --file-selection --title="Selecione um arquivo")
-            		DEST=$(zenity --entry --text="Caminho para enviar o arquivo" --entry-text "Caminho")
-            		scp  $FILE $USUARIO@$SERVER:$DEST
-            		zenity --info --text="Concluído."
-        elif [ "$MODE" == "Download" ]
-     		 then
-            		zenity --info --text="Selecione pasta para receber o arquivo"
-            		FILE=$(zenity --file-selection --directory --title="Selecione um diretório")
-            		DEST=$(zenity --entry --text="Caminho do arquivo a ser recebido" --entry-text "Caminho")
-		        scp $USUARIO@$SERVER:$DEST $FILE
-            		zenity --info --text="Concluído."
-	fi
-}
-
-services_management(){
-SERVICE=$(zenity --list --title "xmanager" --column="Services" `ls /etc/init.d` --width=600 --height=400)
-if [[ $? -eq 1 ]]; then
-	return 1;
-fi
-OPTION=$(zenity --list --title "xmanager" --column="Option" --width=600 --height=400 "Status" "Start" "Stop" "Restart" "Reload")
-if [ "$OPTION" == "Status" ]
-  then
-    STATUS=`service $SERVICE status`
-    echo $STATUS > out.txt
-    zenity --text-info --title=$SERVICE --filename=out.txt --text="STATUS" --width=600 --height=400
-    rm out.txt
-
-elif [ "$OPTION" == "Start" ]
-  then
-    service $SERVICE start
-    zenity --info --text="Asked for $SERVICE to start, check status."
-elif [ "$OPTION" == "Stop" ]
-  then
-    service $SERVICE stop
-    zenity --info --text="Asked for $SERVICE to stop, check status."
-
-elif [ "$OPTION" == "Restart" ]
-  then
-    service $SERVICE restart
-    zenity --info --text="Asked for $SERVICE to restart, check status."
-
-elif [ "$OPTION" == "Reload" ]
-  then
-    sudo service $SERVICE reload
-    zenity --info --text="Asked for $SERVICE to reload, check status."
-fi
-}
-
-inspect_hardware(){
-		NCID=$(lspci -k | grep "Network controller" |cut -d " " -f 1)
-		ECID=$(lspci -k | grep "Ethernet controller" |cut -d " " -f 1)
-		GLXID=$(lspci -k | grep "VGA compatible controller" | cut -d " " -f 1)
-		MBID=$(lspci -k | grep "Host bridge" | cut -d " " -f 1)
-		HARDWARE=$(zenity --list --title="xmanager" --column="Device" "CPU" "Network controller" "Ethernet controller" "VGA compatible controller" "Host bridge" --width=600 --height=400)
-		if [ "$HARDWARE" == "CPU" ]
-			then
-				CPU=$(lscpu)
-				echo $CPU > out.txt
-				zenity --text-info --title="xmanager" --filename=out.txt --text="CPU information" --width=600 --height=400
-				rm out.txt
-		elif [ "$HARDWARE" == "Network controller" ]
-			then
-				PCIID=$(lspci -k -s $NCID)
-				echo $PCIID > out.txt
-				zenity --text-info --title="xmanager" --filename=out.txt --text="Network controller information" --width=600 --height=400
-				rm out.txt
-		elif [ "$HARDWARE" == "Ethernet controller" ]
-			then
-				PCIID=$(lspci -k -s $ECID)
-				echo $PCIID > out.txt
-				zenity --text-info --title="xmanager" --filename=out.txt --text="Ethernet controller information" --width=600 --height=400
-				rm out.txt
-		elif [ "$HARDWARE" == "VGA compatible controller" ]
-			then
-				PCIID=$(lspci -k -s $GLXID)
-				echo $PCIID > out.txt
-				zenity --text-info --title="xmanager" --filename=out.txt --text="VGA compatible controller" --width=600 --height=400
-				rm out.txt
-		elif [ "$HARDWARE" == "Host bridge" ]
-			then
-				PCIID=$(lspci -k -s $MBID)
-				echo $PCIID > out.txt
-				zenity --text-info --title="xmanager" --filename=out.txt --text="Host bridge" --width=600 --height=400
-				rm out.txt
-		fi
-
-}
-
-inspect_software(){
-	echo "Inspect the Kernel and memory and stuff"
-	OPTION=$(zenity --list --title="xmanager" --text="Software Information" --column="Section"  "Kernel" "Distro")
-	if [ "$OPTION" == "Kernel" ]
-		then
-			KINFO=$(uname -r)
-			echo $KINFO > out.txt
-			zenity --text-info --title="xmanager" --filename=out.txt --text="Kernel Information" --width=600 --height=400
-			rm out.txt
-	elif [ "$OPTION" == "Distro" ]
-		then
-			DINFO=$(lsb_release -a)
-			echo $DINFO > out.txt
-			zenity --text-info --title="xmanager" --filename=out.txt --text="Distribution Information" --width=600 --height=400
-			rm out.txt
-	fi
-}
-
-manage_packages(){
-	SW=$(dpkg -l | grep ^ii | sed 's_  _\t_g' | cut -f 2)
-	SOFTWARE=$(zenity --list --title="xmanager" --text="Installed Packages" --column="Installed Packages" $SW --width=600 --height=400)
+	USER=$(zenity --list --title="xmanager" --column="Username" `getent passwd | grep home |cut -d ":" -f 1` --width=600 --height=400)
+	#Verifica se o usuario pressionou cancel no dialogo zenity
 	if [[ $? -eq 1 ]]; then
-		return 1;
+	        return 1;
 	fi
-	OPTION=$(zenity --list --title="xmanager" --text="Options" --column="Option" "Information" "Reconfigure" "Uninstall" "Reinstall")
-	if [ "$OPTION" == "Information" ]
-		then
-			PKT=$(apt show $SOFTWARE)
-			echo $PKT > out.txt
-			zenity --text-info --title="xmanager" --filename=out.txt --text="Package Information" --width=600 --height=400
-			rm out.txt
-	elif [ "$OPTION" == "Reconfigure" ]
-		then
-		if [[ $EUID -ne 0 ]]
-		  then
-		    zenity --info --text="Need to run with root privileges"
-		    continue
-		fi
-		dpkg-reconfigure $SOFTWARE
-	elif [ "$OPTION" == "Uninstall" ]
-		then
-		if [[ $EUID -ne 0 ]]
-		  then
-		    zenity --info --text="Need to run with root privileges"
-		    continue
-		fi
-		apt-get purge $SOFTWARE
-	elif [ "$OPTION" == "Reinstall" ]
-		then
-		if [[ $EUID -ne 0 ]]
-		  then
-		   zenity --info --text="Need to run with root privileges"
-		   continue
-		fi
-		apt-get --reinstall $SOFTWARE
-	fi
-
+	#Monta a formatacao das informacoes no arquivo out.txt em seguida utiliza ele como entrada do dialogo zenity e depois o remove
+	echo "-----------------------------------------[INFO]---------------------------------------------" > out.txt
+	finger $USER >> out.txt
+	echo "-----------------------------------------[GROUPS]------------------------------------------" >> out.txt
+	id $USER >> out.txt
+	echo "----------------------------------------------------------------------------------------------" >> out.txt
+	zenity --text-info --title=$USER --filename=out.txt --text="$USER Info" --width=600 --height=400
+	rm out.txt
 }
 
-runscript(){
-	zenity --info --text="Select the script"
-	FILE=$(zenity --file-selection --title="xmanager")
-	.$FILE
-}
-
+#Function para gerenciamento de usuarios
 manage_user(){
+	#Verifica se o usuario possui privilegios de root
         if [[ $EUID -ne 0 ]]
                 then
                         zenity --info --text="Need to run with root privileges"
                         return 1;
                 fi
+	#Dialogo zenity preenche a variavel OPTION com o valor selecionado na lista em seguida o utiliza na cadeia de decisao (if,elif,else) para executar um procedimento
         OPTION=$(zenity --list --title="xmanager" --text="Options" --column="Option" "Create User" "Delete User" "Add user into group" "Remove user from group" "Change user password" "Read user history" --width=600 --height=400)
+	#Procedimento que cria usuario
         if [ "$OPTION" == "Create User" ]
                 then
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
+			#Entrada de dados do usuario que recebe os dois valores no seguinte formato: username|password para criar um usuario
                         ENTRY=$(zenity --title "User Creation" --username --password)
+			#Splita o username e passwod em 2 variaveis.
                         USERNAME=$(echo $ENTRY | cut -d '|' -f1)
                         PASSWORD=$(echo $ENTRY | cut -d '|' -f2)
+			#Cria o usuario com um diretorio home e com a variavel $SHELL como /bin/bash.
                         useradd $USERNAME -m -d /home/$USERNAME -s /bin/bash
+			#One liner para troca de senha de usuario
                         echo $USERNAME:$PASSWORD | chpasswd
+			zenity --info --text="User Created."
+	#Procedimento que deleta usuario
         elif [ "$OPTION" == "Delete User" ]
                 then
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
-                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
-                        userdel $USER
+			#Dialogo zenity que lista usuarios que possuam home para serem selecionados
+                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `getent passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Deleta usuario selecionado
+			if zenity --question
+				then
+                        		userdel $USER
+					zenity --info --text="User Deleted."
+			fi
+	#Procedimento que adiciona usuario a grupo
         elif [ "$OPTION" == "Add user into group" ]
                 then
-                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Dialogo zenity que lista usuarios que possuam home para serem selecionados
+                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `getent passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
-                        SYSGROUPS=`cat /etc/group | cut -d : -f 1`
+			#Pega os grupos do sistema
+                        SYSGROUPS=`getent group | cut -d : -f 1`
+			#Dialogo zenity que cria lista com os grupos em SYSGROUPS para serem selecionados
                         GROUP=$(zenity --list --title="xmanager" --text="Select Group" --column="Group" $SYSGROUPS --width=600 --height=400)
-                        usermod -aG $GROUP $USER
+			if zenity --question
+				then
+					#Adiciona o usuario selecionado ao grupo selecionado
+                        		usermod -aG $GROUP $USER
+					zenity --info --text="User added into group."
+			fi
+	#Procedimento que remove usuario de grupo.
         elif [ "$OPTION" == "Remove user from group" ]
                 then
-                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Dialogo zenity que lista usuarios que possuam home para serem selecionados
+                        USER=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `getent passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
+			#Busca os grupos do usuario
                         USERGROUPS=$(groups $USER | cut -d ":" -f 2)
+			#Dialogo zenity que lista os grupos do usuario para serem selecionados
                         GROUP=$(zenity --list --title="xmanager" --text="Select Group" --column="Group" $USERGROUPS --width=600 --height=400)
-                        gpasswd -d $USER $GROUP
+			if zenity --question
+				then
+					#Remove usuario do grupo
+                        		gpasswd -d $USER $GROUP
+					zenity --info --text="User removed from group."
+			fi
+	#Procedimento que le o .bash_history de um usuario
         elif [ "$OPTION" == "Read user history" ]
                 then
-                        USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Dialogo zenity que lista usuarios que possuam home para serem selecionados
+                        USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `getent passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
+			#Dialogo zenity com o bash_history do usuario selecionado
                         zenity --text-info --title="xmanager" --filename=/home/$USRNAME/.bash_history --text="$USRNAME History" --width=600 --height=400
+	#Procediento que troca a senha do usuario
         elif [ "$OPTION" == "Change user password" ]
                 then
-                        USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `cat /etc/passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Dialogo zenity que lista usuarios em /etc/passwd que possuam home para serem selecionados
+                        USRNAME=$(zenity --list --title="xmanager" --text="Select User" --column="Username" `getent passwd | grep home | cut -d ":" -f 1` --width=600 --height=400)
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
+			#Dialogo que recebe senha
                         NEWPASSWD=$(zenity --title="New password" --password )
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
+			#Checa complexidade da senha
+			complexity=$(echo $NEWPASSWD | egrep "^.{8,20}" | egrep "[ABCDEFGHIJKLMNOPQRSTUVWXYZ]" | egrep "[abcdefghijklmnopqrstuvwxyz]" | egrep "[0-9]")
+			if [ -z $complexity ]
+				then
+					zenity --warning --text="Weak password, require min 8 characters including: uppercase, lowercase and number"
+					return 1;
+			fi
+			#Dialogo que recebe confirmacao de senha
                         CNEWPASSWD=$(zenity --title="Confirm new password" --password )
+			#Verifica se o usuario pressionou cancel no dialogo zenity
                         if [[ $? -eq 1 ]]; then
                                 return 1;
                         fi
+			#Verifica se as senhas sao iguais
                         if [ "$NEWPASSWD" == "$CNEWPASSWD" ]
                                 then
+					#One liner de troca de senha
                                         echo $USRNAME:$NEWPASSWD | chpasswd
-                                        zenity --info --text="Done."
+                                        zenity --info --text="Password changed."
                         else
                                 zenity --info --text="Passwords don't match."
                         fi
         fi
 }
-main(){
-	while true
-		do
-  			ans=$(zenity --list --title "xmanager" --text "by: m4n3dw0lf" --column "Service" --width=600 --height=400 "User Information" "User Management" "System Information" "Hardware Information" "Firewall Management" "Services Management" "Software Management" "Download/Upload" "Run Script" "Exit")
 
- 			if [ "$ans" == "User Information" ]
-    				then
-      					inspect_user
-			elif [ "$ans" == "User Management" ]
-				then
-					manage_user
-  			elif [ "$ans" == "System Information" ]
-    				then
-      					inspect_software
-  			elif [ "$ans" == "Hardware Information" ]
-    				then
-      					inspect_hardware
-  			elif [ "$ans" == "Firewall Management" ]
-    				then
-					if [[ $EUID -ne 0 ]]
-	 		 			then
-	    						zenity --info --text="Need to run with root privileges"
-	    						continue
-	  				fi
-      					firewall
-  			elif [ "$ans" == "Software Management" ]
-    				then
-      					manage_packages
-  			elif [ "$ans" == "Services Management" ]
-    				then
-					if [[ $EUID -ne 0 ]]
-	  					then
-	    						zenity --info --text="Need to run with root privileges"
-            						continue
-	  				fi
-      					services_management
-			elif [ "$ans" == "Download/Upload" ]
-    				then
-      					download_upload
-  			elif [ "$ans" == "Run Script" ]
-    				then
-      					runscript
-  			elif [ "$ans" == "Exit" ]
-    				then
-      					exit
-  			else
-    				exit
-  			fi
-		done
+lvm(){
+	opt=$(dialog --title "xmanager" --radiolist "Option" 0 0 0  "Extend Logs LVM" "" OFF "Mount Logs LVM" "" ON --stdout)
+	#Extende a LVM de backups
+	if [ "$opt" == "Extend Logs LVM" ]; then
+		lvextend -L +"$gb"G /dev/mapper/vol_group-logs
+		resize2fs /dev/mapper/vol_groups-logs
+	#Monta o lvm no /firewall_log
+	else if [ "$opt" == "Mount Logs LVM" ]; then
+		mount /dev/mapper/vol_group-logs /firewall_log
+	fi
+	#Lista lvms
+	else if [ "$opt" == "List LVMs" ]; then
+		list=$(lvs)
+		dialog --title "xmanager - Firewall Management" --msgbox "$list" 0 0
+	fi
+
 }
 
-if [[ "$@" == "-x" ]]
-	then
-		echo "Function not ready yet"
-
-elif [[ "$@" == "-h" ]]
-	then
-echo
-echo "XMANAGER v0.1"
-echo
-echo "-h    print help message."
-echo "-x    configure X11 forwarding."
-echo
-
-else
-	main > /dev/null 2>&1 &
-fi
+#Loop Dialog Principal
+while true; do
+	option=$(dialog --stdout --title 'xmanager'\
+	--menu 'Option:' 0 0 0\
+	1 "User Information"\
+	2 "User Management"\
+	3 "Firewall Management"\
+	4 "LVM LogSystem Expand"\
+	0 "Exit")
+	#Se o usuario pressionou cancel
+        if [[ $? -eq 1 ]]; then
+		break
+	fi
+	#Opcoes para chamar as respectivas funcoes
+	case "$option" in
+		1) inspect_user ;;
+		2) manage_user ;;
+		3) firewall ;;
+		4) lvm ;;
+		0) break ;;
+	esac
+done
